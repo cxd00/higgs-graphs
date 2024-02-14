@@ -1,27 +1,29 @@
 import torch
+import torch_geometric
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import OneHotEncoder
 from torch_geometric.utils import barabasi_albert_graph
-from torch_geometric.loader import DataLoader
 
-from model import GNN
-from higgs_dataloader import HiggsDataset
+from model import GNN,MLP
+from higgs_dataloader import HiggsDatasetPyG, HiggsDatasetTorch
 import torch.nn.functional as F
 
 csv_file = 'data/HIGGS.csv.gz'
-edge_index_ba = barabasi_albert_graph(28, 14)
+edge_index_ba = barabasi_albert_graph(28, 3)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = GNN().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# model = MLP().to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-train_dataset = HiggsDataset(csv_file=csv_file, edge_index=edge_index_ba, split='train')
-val_dataset = HiggsDataset(csv_file=csv_file, edge_index=edge_index_ba, split='val')
-test_dataset = HiggsDataset(csv_file=csv_file, edge_index=edge_index_ba, split='test')
+# Test PyG
+train_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train')
+val_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val')
+test_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test')
 
-train_loader = DataLoader(train_dataset, batch_size=256)
-val_loader = DataLoader(val_dataset, batch_size=256)
-test_loader = DataLoader(test_dataset, batch_size=256)
+train_loader = torch_geometric.loader.DataLoader(train_dataset, batch_size=64)
+val_loader = torch_geometric.loader.DataLoader(val_dataset, batch_size=64)
+test_loader = torch_geometric.loader.DataLoader(test_dataset, batch_size=64)
 
 # Set the number of epochs
 num_epochs = 100
@@ -34,7 +36,7 @@ for epoch in range(num_epochs):
         data = data.to(device)
         optimizer.zero_grad()
         out = model(data.x, data.edge_index, data.batch)
-        loss = F.cross_entropy(out, data.y)
+        loss = F.binary_cross_entropy(out, data.y.reshape(-1, 1))
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
@@ -44,10 +46,10 @@ for epoch in range(num_epochs):
     for data in val_loader:
         data = data.to(device)
         out = model(data.x, data.edge_index, data.batch)
-        loss = F.cross_entropy(out, data.y)
+        loss = F.binary_cross_entropy(out, data.y.reshape(-1, 1))
         val_loss += loss.item()
 
-    print(f'Epoch {epoch}, Train loss: {train_loss/len(train_loader)}, Val loss: {val_loss/len(val_loader)}')
+    print(f'Epoch {epoch}, Train loss: {train_loss}, Val loss: {val_loss}')
 
 # Test with roc_auc_score
 model.eval()
@@ -76,4 +78,3 @@ labels_one_hot = labels_one_hot.toarray()
 # Compute ROC AUC score
 roc_auc = roc_auc_score(labels_one_hot, preds)
 print(f'Test ROC AUC score: {roc_auc}')
-
