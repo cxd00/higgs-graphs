@@ -42,7 +42,7 @@ class HiggsDatasetPyG(torch_geometric.data.Dataset):
         class_label = self.higgs_frame.iloc[idx, 0].astype('float')
 
         sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index,
-                      y=torch.tensor([class_label], dtype=torch.float))
+                      y=torch.tensor([class_label], dtype=torch.long))
 
         return sample
 

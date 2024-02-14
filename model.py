@@ -6,28 +6,20 @@ from torch_geometric.nn.conv import GATConv
 
 
 class GNN(torch.nn.Module):
+# TODO rethink the model, needs some better message passing
     def __init__(self):
         super(GNN, self).__init__()
-        self.sample_up_1 = Linear(1, 16)
-        self.sample_up_2 = Linear(16, 32)
-        self.sample_up_3 = Linear(32, 64)
-        self.conv1 = GATConv(64, 128)
-        self.conv2 = GATConv(128, 256)
-        self.conv3 = GATConv(256, 128)
-        self.conv4 = GATConv(128, 64)
-        self.conv5 = GATConv(64, 32)
-        self.lin = Linear(32, 1)
+        self.conv1 = GATConv(1, 128)
+        self.conv2 = GATConv(128, 128)
+        self.conv3 = GATConv(128, 128)
+        self.lin = Linear(128, 2)
 
     def forward(self, x, edge_index, batch):
-        x = self.sample_up_1(x).relu()
-        x = self.sample_up_2(x).relu()
-        x = self.sample_up_3(x).relu()
         x = self.conv1(x, edge_index).relu()
         x = self.conv2(x, edge_index).relu()
         x = self.conv3(x, edge_index).relu()
-        x = self.conv4(x, edge_index).relu()
-        x = self.conv5(x, edge_index).relu()
         x = global_mean_pool(x, batch)
+        x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin(x).sigmoid()
         return x
 
