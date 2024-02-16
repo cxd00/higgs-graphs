@@ -2,7 +2,9 @@ import torch
 import torch_geometric
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import OneHotEncoder
-from torch_geometric.utils import barabasi_albert_graph
+from torch_geometric.utils import barabasi_albert_graph, erdos_renyi_graph
+from torch_geometric.nn import summary
+from torch.utils.tensorboard import SummaryWriter
 
 from model import GNN,MLP
 from higgs_dataloader import HiggsDatasetPyG, HiggsDatasetTorch
@@ -12,11 +14,12 @@ import torch.nn.functional as F
 #  https://colab.research.google.com/github/wandb/examples/blob/pyg/graph-classification/colabs/pyg/Graph_Classification_with_PyG_and_W%26B.ipynb#scrollTo=elAN_YlM_Pyr
 
 csv_file = 'data/HIGGS.csv.gz'
-edge_index_ba = barabasi_albert_graph(28, 8)
+# edge_index_ba = barabasi_albert_graph(28, 8)
+edge_index_ba = erdos_renyi_graph(20, 1.0)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = GNN().to(device)
-# model = MLP().to(device)
+model = GNN()
+# model = MLP()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Test PyG
@@ -30,8 +33,12 @@ test_loader = torch_geometric.loader.DataLoader(test_dataset, batch_size=32)
 
 # Set the number of epochs
 num_epochs = 100
+print(summary(model, train_dataset[0].x, train_dataset[0].edge_index, torch.tensor([0])))
+# writer = SummaryWriter()
+# writer.add_graph(model, [train_dataset[0].x, train_dataset[0].edge_index, torch.tensor([0])])
 
 # Start the training loop
+model = model.to(device)
 for epoch in range(num_epochs):
     train_loss = 0
     model.train()
