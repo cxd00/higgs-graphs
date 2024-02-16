@@ -10,12 +10,15 @@ from model import GNN,MLP
 from higgs_dataloader import HiggsDatasetPyG, HiggsDatasetTorch
 import torch.nn.functional as F
 
+from utils import generate_higgs_exp_graph_edge
+
 # TODO add wandb support
 #  https://colab.research.google.com/github/wandb/examples/blob/pyg/graph-classification/colabs/pyg/Graph_Classification_with_PyG_and_W%26B.ipynb#scrollTo=elAN_YlM_Pyr
 
 csv_file = 'data/HIGGS.csv.gz'
 # edge_index_ba = barabasi_albert_graph(28, 8)
-edge_index_ba = erdos_renyi_graph(20, 1.0)
+# edge_index_ba = erdos_renyi_graph(20, 1.0)
+edge_index_ba = generate_higgs_exp_graph_edge()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = GNN()
@@ -27,8 +30,8 @@ train_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, spl
 val_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val')
 test_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test')
 
-train_loader = torch_geometric.loader.DataLoader(train_dataset, batch_size=32)
-val_loader = torch_geometric.loader.DataLoader(val_dataset, batch_size=32)
+train_loader = torch_geometric.loader.DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = torch_geometric.loader.DataLoader(val_dataset, batch_size=32, shuffle=True)
 test_loader = torch_geometric.loader.DataLoader(test_dataset, batch_size=32)
 
 # Set the number of epochs
@@ -39,6 +42,8 @@ print(summary(model, train_dataset[0].x, train_dataset[0].edge_index, torch.tens
 
 # Start the training loop
 model = model.to(device)
+# model = torch.compile(model)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 for epoch in range(num_epochs):
     train_loss = 0
     model.train()
@@ -46,20 +51,23 @@ for epoch in range(num_epochs):
         data = data.to(device)
         optimizer.zero_grad()
         out = model(data.x, data.edge_index, data.batch)
-        loss = F.cross_entropy(out, data.y)
+        loss = F.binary_cross_entropy_with_logits(out, data.y.float())
+        # loss = F.mse_loss(out, data.y.float())
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
+    scheduler.step()
     # Eval
     val_loss = 0
     model.eval()
     for data in val_loader:
         data = data.to(device)
         out = model(data.x, data.edge_index, data.batch)
-        loss = F.cross_entropy(out, data.y)
+        loss = F.binary_cross_entropy_with_logits(out, data.y.float())
         val_loss += loss.item()
 
-    print(f'Epoch {epoch}, Train loss: {train_loss/len(train_loader)}, Val loss: {val_loss/len(val_loader)}')
+    print(f'Epoch {epoch}, Train loss: {train_loss/len(train_loader)}, Val loss: {val_loss/len(val_loader)}, '
+          f'learning rate: {optimizer.param_groups[0]["lr"]}')
 
 # Test with roc_auc_score
 model.eval()
@@ -76,15 +84,6 @@ with torch.no_grad():
 preds = torch.cat(preds).numpy()
 labels = torch.cat(labels).numpy()
 
-# Initialize OneHotEncoder
-encoder = OneHotEncoder()
-
-# Fit and transform the labels to one-hot encoding
-labels_one_hot = encoder.fit_transform(labels.reshape(-1, 1))
-
-# Convert to numpy array
-labels_one_hot = labels_one_hot.toarray()
-
 # Compute ROC AUC score
-roc_auc = roc_auc_score(labels_one_hot, preds)
+roc_auc = roc_auc_score(labels, preds)
 print(f'Test ROC AUC score: {roc_auc}')

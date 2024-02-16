@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch.nn import Linear
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.nn.conv import GATConv, GCNConv
+from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.nn import aggr
 
 
@@ -10,33 +11,41 @@ class GNN(torch.nn.Module):
 # TODO rethink the model, needs some better message passing
     def __init__(self):
         super(GNN, self).__init__()
-        self.gat_conv1 = GATConv(1, 128)
-        self.gat_conv2 = GATConv(128, 128)
-        self.gat_conv3 = GATConv(128, 128)
-        self.gcn_conv1 = GCNConv(128, 64)
-        self.gcn_conv2 = GCNConv(64, 32)
+        self.gat_conv1 = GATConv(1, 64)
+        self.graph_norm_1 = GraphNorm(64)
+        self.gat_conv2 = GATConv(64, 512)
+        self.graph_norm_2 = GraphNorm(512)
+        self.gat_conv3 = GATConv(512, 2048)
+        self.graph_norm_3 = GraphNorm(2048)
+        self.gcn_conv1 = GCNConv(2048, 512)
+        self.graph_norm_4 = GraphNorm(512)
+        self.gcn_conv2 = GCNConv(512, 64)
+        self.graph_norm_5 = GraphNorm(64)
         self.aggr = aggr.SoftmaxAggregation(learn=True)
-        self.lin1 = Linear(32, 16)
-        self.lin2 = Linear(16, 2)
+        self.lin1 = Linear(64*3, 2)
 
     def forward(self, x, edge_index, batch):
         x = self.gat_conv1(x, edge_index)
         x = F.elu(x)
+        x = self.graph_norm_1(x, batch)
         x = self.gat_conv2(x, edge_index)
         x = F.elu(x)
+        x = self.graph_norm_2(x, batch)
         x = self.gat_conv3(x, edge_index)
         x = F.elu(x)
+        x = self.graph_norm_3(x, batch)
         x = self.gcn_conv1(x, edge_index)
         x = F.elu(x)
+        x = self.graph_norm_4(x, batch)
         x = self.gcn_conv2(x, edge_index)
-        x = F.elu(x)
-        # x = global_mean_pool(x, batch)
-        x = self.aggr(x, batch)
+        x = self.graph_norm_5(x, batch)
+        x_max = global_max_pool(x, batch)
+        x_mean = global_mean_pool(x, batch)
+        x_add = global_add_pool(x, batch)
+        x = torch.cat([x_max, x_mean, x_add], dim=1)
+        # x = self.aggr(x, batch)
         # x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin1(x)
-        x = F.elu(x)
-        x = self.lin2(x)
-        x = F.log_softmax(x, dim=1)
         return x
 
 class MLP(torch.nn.Module):

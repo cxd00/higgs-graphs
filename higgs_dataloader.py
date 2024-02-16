@@ -1,15 +1,18 @@
 import torch
 import pandas as pd
 import torch_geometric.data
-from torch_geometric.utils import barabasi_albert_graph
+from torch_geometric.utils import barabasi_albert_graph, erdos_renyi_graph
 from torch_geometric.data import Data
+
+from utils import create_graph, generate_higgs_exp_graph_edge
+
 
 class HiggsDatasetPyG(torch_geometric.data.Dataset):
     def __init__(self, csv_file, edge_index, split, norm=False, drop_feats=False, root=None, transform=None, pre_transform=None,
                  pre_filter=None):
         super().__init__(root, transform, pre_transform, pre_filter)
         # Load data
-        self.higgs_frame = pd.read_csv(csv_file, compression='gzip', header=None, nrows=10000)
+        self.higgs_frame = pd.read_csv(csv_file, compression='gzip', header=None, nrows=20000)
         # enable shuffle
         self.higgs_frame = self.higgs_frame.sample(frac=1).reset_index(drop=True)
         self.higgs_frame.columns = [
@@ -41,12 +44,14 @@ class HiggsDatasetPyG(torch_geometric.data.Dataset):
         data = self.higgs_frame.iloc[idx, 1:].values
         data_len = len(data)
         data = data.astype('float').reshape(data_len, -1)
-        class_label = self.higgs_frame.iloc[idx, 0].astype('float')
+        class_label = self.higgs_frame.iloc[idx, 0]
+        class_label_one_hot = torch.zeros(2)
+        class_label_one_hot[int(class_label)] = 1
 
         edge_attr = torch.ones((self.edge_index.shape[1], 1))
 
-        sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index, edge_attr=edge_attr,
-                      y=torch.tensor([class_label], dtype=torch.long))
+        sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index,
+                      y=torch.tensor(torch.unsqueeze(class_label_one_hot,0), dtype=torch.float), node_name=self.higgs_frame.columns[1:].values)
 
         return sample
 
@@ -98,10 +103,12 @@ class HiggsDatasetTorch(torch.utils.data.Dataset):
 if __name__ == '__main__':
     # Example of usage and testing
     csv_file = 'data/HIGGS.csv.gz'
-    edge_index_ba = barabasi_albert_graph(28, 14)
-    higgs_dataset_train = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train')
-    higgs_dataset_val = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val')
-    higgs_dataset_test = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test')
+
+    edge_index_hg = generate_higgs_exp_graph_edge()
+
+    higgs_dataset_train = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_hg, split='train')
+    higgs_dataset_val = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_hg, split='val')
+    higgs_dataset_test = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_hg, split='test')
 
     print('Length of datasets')
     print(len(higgs_dataset_train))
@@ -111,7 +118,6 @@ if __name__ == '__main__':
     print('Dataset num_features' + str(higgs_dataset_train.num_features))
     print('Dataset num_classes' + str(higgs_dataset_train.num_classes))
 
-
     print('First item of train dataset')
     first_item = higgs_dataset_train[0]
     print(first_item)
@@ -120,8 +126,10 @@ if __name__ == '__main__':
     print('number of node features' + str(first_item.num_node_features))
     print('has_isolated_nodes' + str(first_item.has_isolated_nodes()))
     print('contains_self_loops' + str(first_item.contains_self_loops()))
-    print('edge_attr.shape' + str(first_item.edge_attr.shape))
+    # print('edge_attr.shape' + str(first_item.edge_attr.shape))
     print('is_directed' + str(first_item.is_directed()))
+    fig = create_graph(first_item)
+    fig.show()
 
     print('Data loader')
     loader = torch_geometric.loader.DataLoader(higgs_dataset_train, batch_size=256)
