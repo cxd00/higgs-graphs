@@ -56,7 +56,7 @@ val_loader = torch_geometric.loader.DataLoader(val_dataset, batch_size=32, shuff
 test_loader = torch_geometric.loader.DataLoader(test_dataset, batch_size=1)
 
 # Set the number of epochs
-num_epochs = 300
+num_epochs = 35
 print(summary(model, train_dataset[0]))
 # writer = SummaryWriter()
 # writer.add_graph(model, [train_dataset[0].x, train_dataset[0].edge_index, torch.tensor([0])])
@@ -64,7 +64,7 @@ print(summary(model, train_dataset[0]))
 # Start the training loop
 model = model.to(device)
 # model = torch.compile(model)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 try:
     for epoch in range(num_epochs):
         train_loss = 0

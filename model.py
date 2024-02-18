@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
 from torch.nn import Linear
-from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool, ARMAConv, GATv2Conv, SortAggregation
+from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool, ARMAConv, GATv2Conv, SortAggregation, \
+    MLPAggregation
 from torch_geometric.nn.conv import GATConv, GCNConv
 from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.nn import aggr
@@ -207,30 +208,43 @@ class GNN_v5(torch.nn.Module):
     # An End-to-End Deep Learning Architecture for Graph Classification
     def __init__(self):
         super(GNN_v5, self).__init__()
+        out_hidden = 512
         self.gat_conv1 = GATv2Conv(1, 64)
+        self.graph_norm_1 = GraphNorm(64)
         self.gat_conv2 = GATv2Conv(64, 128)
+        self.gat_conv3 = GATv2Conv(128, out_hidden)
         self.gcn_conv1 = ARMAConv(1, 64)
+        self.graph_norm_1 = GraphNorm(64)
         self.gcn_conv2 = ARMAConv(64, 128)
-        self.aggr = SortAggregation(10)
-        self.lin1 = Linear(128*3*2, 64)
-        self.lin2 = Linear(128*10*2, 128)
-        self.lin3 = Linear(192, 2)
+        self.gcn_conv3 = ARMAConv(128, out_hidden)
+        self.aggr = SortAggregation(12)
+        self.lin1 = Linear(out_hidden*3*2, out_hidden)
+        self.lin2 = Linear(out_hidden*12*2, out_hidden)
 
+        self.lin3 = Linear(out_hidden*2, 2)
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         gat_conv1 = self.gat_conv1(x, edge_index)
         gat_conv1 = F.elu(gat_conv1)
+        gat_conv1 = self.graph_norm_1(gat_conv1, batch)
 
         gat_conv2 = self.gat_conv2(gat_conv1, edge_index)
         gat_conv2 = F.elu(gat_conv2)
 
+        gat_conv3 = self.gat_conv3(gat_conv2, edge_index)
+        gat_conv3 = F.elu(gat_conv3)
+
         gcn_conv1 = self.gcn_conv1(x, edge_index)
         gcn_conv1 = F.elu(gcn_conv1)
+        gcn_conv1 = self.graph_norm_1(gcn_conv1, batch)
 
         gcn_conv2 = self.gcn_conv2(gcn_conv1, edge_index)
         gcn_conv2 = F.elu(gcn_conv2)
 
-        gcn_gat = torch.cat([gat_conv2, gcn_conv2], dim=1)
+        gcn_conv3 = self.gcn_conv3(gcn_conv2, edge_index)
+        gcn_conv3 = F.elu(gcn_conv3)
+
+        gcn_gat = torch.cat([gat_conv3, gcn_conv3], dim=1)
 
         x_max = global_max_pool(gcn_gat, batch)
         x_mean = global_mean_pool(gcn_gat, batch)
@@ -239,10 +253,10 @@ class GNN_v5(torch.nn.Module):
         x_norm_pool = self.lin1(x_norm_pool)
 
         x_agg_pool = self.aggr(gcn_gat, batch)
-        # x = torch.cat([x, x_agg], dim=1)
         x_agg_pool = self.lin2(x_agg_pool)
 
         x = torch.cat([x_norm_pool, x_agg_pool], dim=1)
+        x = F.dropout(x, p=0.2, training=self.training)
         x = self.lin3(x)
         return x
 
