@@ -28,7 +28,7 @@ test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=256, shuffle=
 
 
 # Set the number of epochs
-num_epochs = 100
+num_epochs = 10
 
 # Start the training loop
 for epoch in range(num_epochs):
@@ -39,7 +39,7 @@ for epoch in range(num_epochs):
         label = label.to(device)
         optimizer.zero_grad()
         out = model(data)
-        loss = F.binary_cross_entropy(out, label.reshape(-1, 1))
+        loss = F.binary_cross_entropy_with_logits(out, label.reshape(-1, 1))
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
@@ -50,7 +50,7 @@ for epoch in range(num_epochs):
         data = data.to(device)
         label = label.to(device)
         out = model(data)
-        loss = F.binary_cross_entropy(out, label.reshape(-1, 1))
+        loss = F.binary_cross_entropy_with_logits(out, label.reshape(-1, 1))
         val_loss += loss.item()
 
     print(f'Epoch {epoch}, Train loss: {train_loss/len(train_loader)}, Val loss: {val_loss/len(val_loader)}')

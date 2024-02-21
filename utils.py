@@ -29,6 +29,20 @@ def generate_higgs_exp_graph_edge():
          fully_connect_manual_feat, connectionn], dim=1)
     return all_edge
 
+def generate_higgs_exp_graph_edge_v3():
+    # Generate a fully connect graph between edge 0 and 5
+    fully_connect_physical = torch.tensor([[0, 1, 2, 3, 4], [0, 0, 0, 0, 0]])
+    fully_connect_jet_1 = torch.tensor([[0, 1, 2, 3], [0, 0, 0, 0]]) + 5
+    fully_connect_jet_2 = torch.tensor([[0, 1, 2, 3], [0, 0, 0, 0]]) + 9
+    fully_connect_jet_3 = torch.tensor([[0, 1, 2, 3], [0, 0, 0, 0]]) + 13
+    fully_connect_jet_4 = torch.tensor([[0, 1, 2, 3], [0, 0, 0, 0]]) + 17
+    fully_connect_manual_feat = torch.tensor([[0, 1, 2, 3, 4, 5, 6], [0, 0, 0, 0, 0, 0, 0]]) + 21
+    connection = torch.tensor([[5, 9, 13, 17, 21], [0, 0, 0, 0, 0]])
+    all_edge = torch.cat(
+        [fully_connect_physical, fully_connect_jet_1, fully_connect_jet_2, fully_connect_jet_3, fully_connect_jet_4,
+         fully_connect_manual_feat, connection], dim=1)
+    return all_edge
+
 def set_seed(seed=0):
     random.seed(seed)
     np.random.seed(seed)
