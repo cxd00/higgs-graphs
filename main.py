@@ -1,3 +1,4 @@
+import numpy as np
 import plotly
 import torch
 import torch_geometric
@@ -8,8 +9,8 @@ from torch_geometric.utils import barabasi_albert_graph, erdos_renyi_graph
 from torch_geometric.nn import summary
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from model import GNN, MLP, GNN_v2, GNN_v3, GNN_v3_mini, GNN_v4, GNN_v5
-from higgs_dataloader import HiggsDatasetPyG, HiggsDatasetTorch
+from model import GNN, MLP, GNN_v2, GNN_v3, GNN_v3_mini, GNN_v4, GNN_v5, GNN_v6
+from higgs_dataloader import HiggsDatasetPyG, HiggsDatasetTorch, HiggsDataset3DPyG
 import torch.nn.functional as F
 
 from utils import generate_higgs_exp_graph_edge, create_graph, set_seed, generate_higgs_exp_graph_edge_v3
@@ -33,12 +34,15 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # model = GNN_v3_mini()
 # model = GNN_v4()
 model = GNN_v5()
+# model = GNN_v6()
 # model = MLP()
 
 # wandb log model name
 wandb.config.model_name = model.__class__.__name__
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+# optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
 # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 
 # Test PyG
@@ -46,6 +50,9 @@ print('Loading datasets')
 train_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train')
 val_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val')
 test_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test')
+# train_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='train')
+# val_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='val')
+# test_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='test')
 
 # upload graph vis to wandb
 table = wandb.Table(columns=["Graph", "Label"])
@@ -69,6 +76,7 @@ model = model.to(device)
 # model = torch.compile(model)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 print('Start training')
+best_val_loss = float('inf')
 try:
     for epoch in range(num_epochs):
         train_loss = 0
@@ -83,14 +91,18 @@ try:
             optimizer.step()
             train_loss += loss.item()
         scheduler.step()
+        lr_scheduler.step()
         # Eval
         val_loss = 0
-        model.eval()
         for data in tqdm(val_loader, desc=f"Epoch {epoch}"):
             data = data.to(device)
             out = model(data)
             loss = F.binary_cross_entropy_with_logits(out, data.y.float())
             val_loss += loss.item()
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), 'best_model.pth')
 
         print(f'Epoch {epoch}, Train loss: {train_loss / len(train_loader)}, Val loss: {val_loss / len(val_loader)}, '
               f'learning rate: {optimizer.param_groups[0]["lr"]}')
@@ -100,6 +112,7 @@ except KeyboardInterrupt:
     print('Training terminated')
 
 # Test with roc_auc_score
+model.load_state_dict(torch.load('best_model.pth'))
 model.eval()
 preds = []
 labels = []

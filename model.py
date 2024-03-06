@@ -1,8 +1,8 @@
 import torch
 import torch.nn.functional as F
-from torch.nn import Linear
+from torch.nn import Linear, ReLU, ELU
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool, ARMAConv, GATv2Conv, SortAggregation, \
-    MLPAggregation
+    MLPAggregation, PointNetConv
 from torch_geometric.nn.conv import GATConv, GCNConv
 from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.nn import aggr
@@ -261,6 +261,64 @@ class GNN_v5(torch.nn.Module):
         x = F.dropout(x, p=0.2, training=self.training)
         x = self.lin3(x)
         # x = self.lin4(x)
+        return x
+
+class GNN_v6(torch.nn.Module):
+    def __init__(self):
+        super(GNN_v6, self).__init__()
+
+        self.local_nn_1 = torch.nn.Sequential(
+            Linear(3*2, 64),
+            ELU(),
+            Linear(64, 128),
+            ELU(),
+            Linear(128, 256),
+        )
+
+        self.global_nn_1 = torch.nn.Sequential(
+            Linear(256, 256),
+            ELU(),
+            Linear(256, 256),
+            ELU(),
+            Linear(256, 128),
+        )
+
+        self.local_nn_2 = torch.nn.Sequential(
+            Linear(131, 256),
+            ELU(),
+            Linear(256, 256),
+            ELU(),
+            Linear(256, 256)
+        )
+
+        self.global_nn_2 = torch.nn.Sequential(
+            Linear(256, 256),
+            ELU(),
+            Linear(256, 256),
+            ELU(),
+            Linear(256, 128)
+        )
+
+        self.pointnet_conv1 = PointNetConv(self.local_nn_1, self.global_nn_1)
+        self.pointnet_conv2 = PointNetConv(self.local_nn_2, self.global_nn_2)
+
+        self.aggr = SortAggregation(1)
+        self.lin1 = Linear(128*3, 2)
+    def forward(self, data):
+        x, edge_index, batch, pos = data.x, data.edge_index, data.batch, data.pos
+        x_1 = self.pointnet_conv1(x, pos, edge_index)
+        x_1 = F.elu(x_1)
+        x_2 = self.pointnet_conv2(x_1, pos, edge_index)
+        x_2 = F.elu(x_2)
+        # pointnet_concat = torch.cat([x_1, x_2], dim=1)
+        # x = self.aggr(x_2, batch)
+        # x = self.aggr(x_1, batch)
+        x_max = global_max_pool(x_2, batch)
+        x_mean = global_mean_pool(x_2, batch)
+        x_add = global_add_pool(x_2, batch)
+        x_norm_pool = torch.cat([x_max, x_mean, x_add], dim=1)
+        # x_norm_pool = self.lin1(x_norm_pool)
+        x = self.lin1(x_norm_pool)
         return x
 
 class MLP(torch.nn.Module):
