@@ -1,16 +1,18 @@
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch.nn import Linear, ReLU, ELU
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool, ARMAConv, GATv2Conv, SortAggregation, \
-    MLPAggregation, PointNetConv
+    MLPAggregation, PointNetConv, TopKPooling, GCN, GAT
 from torch_geometric.nn.conv import GATConv, GCNConv
 from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.nn import aggr
 from torch_geometric.transforms import GDC
+from torch_geometric.utils import erdos_renyi_graph
 
 
 class GNN(torch.nn.Module):
-# TODO rethink the model, needs some better message passing
+    # TODO rethink the model, needs some better message passing
     def __init__(self):
         super(GNN, self).__init__()
         self.gat_conv1 = GATConv(1, 64)
@@ -23,7 +25,7 @@ class GNN(torch.nn.Module):
         self.graph_norm_4 = GraphNorm(512)
         self.gcn_conv2 = GCNConv(512, 64)
         self.graph_norm_5 = GraphNorm(64)
-        self.lin1 = Linear(64*3, 2)
+        self.lin1 = Linear(64 * 3, 2)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
@@ -51,13 +53,15 @@ class GNN(torch.nn.Module):
         x = self.lin1(x)
         return x
 
+
 class GNN_v2(torch.nn.Module):
     def __init__(self):
         super(GNN_v2, self).__init__()
         self.gdc1 = GDC()
         self.gat_conv1 = GATConv(1, 16)
         self.gcn_conv1 = GCNConv(16, 32)
-        self.lin1 = Linear(32*3, 2)
+        self.lin1 = Linear(32 * 3, 2)
+
     def forward(self, data):
         new_data = self.gdc1(data)
         x, edge_index, batch = new_data.x, new_data.edge_index, new_data.batch
@@ -76,6 +80,7 @@ class GNN_v2(torch.nn.Module):
         x = self.lin1(x)
         return x
 
+
 class GNN_v3(torch.nn.Module):
     def __init__(self):
         super(GNN_v3, self).__init__()
@@ -91,7 +96,7 @@ class GNN_v3(torch.nn.Module):
         self.graph_norm_5 = GraphNorm(64)
         # self.aggr = aggr.MLPAggregation(64, 64, 7, num_layers=1)
         self.aggr = aggr.SortAggregation(5)
-        self.lin1 = Linear(64*8, 2)
+        self.lin1 = Linear(64 * 8, 2)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
@@ -120,6 +125,7 @@ class GNN_v3(torch.nn.Module):
         x = self.lin1(x)
         return x
 
+
 class GNN_v3_mini(torch.nn.Module):
     def __init__(self):
         super(GNN_v3_mini, self).__init__()
@@ -135,7 +141,7 @@ class GNN_v3_mini(torch.nn.Module):
         self.graph_norm_5 = GraphNorm(32)
         # self.aggr = aggr.MLPAggregation(64, 64, 7, num_layers=1)
         # self.aggr = aggr.SortAggregation(5)
-        self.lin1 = Linear(32*3, 2)
+        self.lin1 = Linear(32 * 3, 2)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
@@ -162,6 +168,7 @@ class GNN_v3_mini(torch.nn.Module):
         # x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin1(x)
         return x
+
 
 class GNN_v4(torch.nn.Module):
     def __init__(self):
@@ -176,7 +183,7 @@ class GNN_v4(torch.nn.Module):
         self.graph_norm_4 = GraphNorm(512)
         self.gcn_conv2 = ARMAConv(512, 64)
         self.graph_norm_5 = GraphNorm(64)
-        self.lin1 = Linear(64*3, 2)
+        self.lin1 = Linear(64 * 3, 2)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
@@ -203,6 +210,7 @@ class GNN_v4(torch.nn.Module):
         # x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin1(x)
         return x
+
 
 class GNN_v5(torch.nn.Module):
     # Jet index encoding?
@@ -219,13 +227,14 @@ class GNN_v5(torch.nn.Module):
         self.gcn_conv2 = ARMAConv(64, 128)
         self.gcn_conv3 = ARMAConv(128, out_hidden)
         self.aggr = SortAggregation(12)
-        self.lin1 = Linear(out_hidden*3*2, out_hidden)
-        self.lin2 = Linear(out_hidden*12*2, out_hidden)
+        self.lin1 = Linear(out_hidden * 3 * 2, out_hidden)
+        self.lin2 = Linear(out_hidden * 12 * 2, out_hidden)
 
-        self.lin3 = Linear(out_hidden*2, 2, bias=False)
+        self.lin3 = Linear(out_hidden * 2, 1, bias=False)
         # self.lin4 = Linear(2, 2, bias=False) 
-    def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+    def forward(self, x, edge_index, batch):
+        # x, edge_index, batch = data.x, data.edge_index, data.batch
         gat_conv1 = self.gat_conv1(x, edge_index)
         gat_conv1 = F.elu(gat_conv1)
         gat_conv1 = self.gat_conv1_norm(gat_conv1, batch)
@@ -263,51 +272,60 @@ class GNN_v5(torch.nn.Module):
         # x = self.lin4(x)
         return x
 
+
 class GNN_v6(torch.nn.Module):
     def __init__(self):
         super(GNN_v6, self).__init__()
 
         self.local_nn_1 = torch.nn.Sequential(
-            Linear(3*2, 64),
+            Linear(3 * 2, 32),
             ELU(),
-            Linear(64, 128),
+            Linear(32, 32),
             ELU(),
-            Linear(128, 256),
+            Linear(32, 32),
         )
 
         self.global_nn_1 = torch.nn.Sequential(
-            Linear(256, 256),
+            Linear(32, 32),
             ELU(),
-            Linear(256, 256),
+            Linear(32, 32),
             ELU(),
-            Linear(256, 128),
+            Linear(32, 32),
         )
 
         self.local_nn_2 = torch.nn.Sequential(
-            Linear(131, 256),
+            Linear(35, 35),
             ELU(),
-            Linear(256, 256),
+            Linear(35, 35),
             ELU(),
-            Linear(256, 256)
+            Linear(35, 35)
         )
 
         self.global_nn_2 = torch.nn.Sequential(
-            Linear(256, 256),
+            Linear(35, 35),
             ELU(),
-            Linear(256, 256),
+            Linear(35, 35),
             ELU(),
-            Linear(256, 128)
+            Linear(35, 35)
         )
 
         self.pointnet_conv1 = PointNetConv(self.local_nn_1, self.global_nn_1)
+
+        self.top_k_pooling = TopKPooling(32, ratio=0.2)
+
         self.pointnet_conv2 = PointNetConv(self.local_nn_2, self.global_nn_2)
 
         self.aggr = SortAggregation(1)
-        self.lin1 = Linear(128*3, 2)
+        self.lin1 = Linear(35, 2)
+
     def forward(self, data):
         x, edge_index, batch, pos = data.x, data.edge_index, data.batch, data.pos
         x_1 = self.pointnet_conv1(x, pos, edge_index)
         x_1 = F.elu(x_1)
+
+        x_1_pool_x, x_1_pool_edge_index, x_1_pool_edge_attr, x_1_pool_batch, x_1_perm, x_1_score = self.top_k_pooling(
+            x_1, edge_index, batch=batch)
+
         x_2 = self.pointnet_conv2(x_1, pos, edge_index)
         x_2 = F.elu(x_2)
         # pointnet_concat = torch.cat([x_1, x_2], dim=1)
@@ -316,10 +334,58 @@ class GNN_v6(torch.nn.Module):
         x_max = global_max_pool(x_2, batch)
         x_mean = global_mean_pool(x_2, batch)
         x_add = global_add_pool(x_2, batch)
-        x_norm_pool = torch.cat([x_max, x_mean, x_add], dim=1)
+        # x_norm_pool = torch.cat([x_max, x_mean, x_add], dim=1)
         # x_norm_pool = self.lin1(x_norm_pool)
-        x = self.lin1(x_norm_pool)
+        x = self.lin1(x_max)
         return x
+
+
+class GNN_v7(torch.nn.Module):
+    def __init__(self):
+        super(GNN_v7, self).__init__()
+        # try HeteroData?
+        self.jet_mlp = torch_geometric.nn.MLP([4, 64, 128], norm=None)
+        self.lepton_mlp = torch_geometric.nn.MLP([3, 64, 128], norm=None)
+        self.missing_energy_mlp = torch_geometric.nn.MLP([2, 64, 128], norm=None)
+        self.high_level_mlp = torch_geometric.nn.MLP([7, 64, 128], norm=None)
+
+        # self.gat_conv1 = GATv2Conv(128, 128)
+        self.gat_conv1 = ARMAConv(128, 128)
+        # self.gat_conv2 = GATv2Conv(256, 256)
+
+        self.classifier = torch_geometric.nn.MLP([128, 64, 1], norm=None)
+        self.edge_index = erdos_renyi_graph(6, 0.5).to('cuda')
+
+    def forward(self, x):
+        lepton_raw = x[:, 0:3]
+        missing_energy_raw = x[:, 3:5]
+        jet1_raw = x[:, 5:9]
+        jet2_raw = x[:, 9:13]
+        jet3_raw = x[:, 13:17]
+        jet4_raw = x[:, 17:21]
+        high_level_raw = x[:, 21:28]
+
+        lepton = self.lepton_mlp(lepton_raw)
+        missing_energy = self.missing_energy_mlp(missing_energy_raw)
+        jet1 = self.jet_mlp(jet1_raw)
+        jet2 = self.jet_mlp(jet2_raw)
+        jet3 = self.jet_mlp(jet3_raw)
+        jet4 = self.jet_mlp(jet4_raw)
+        high_level = self.high_level_mlp(high_level_raw)
+
+        x = torch.stack([lepton, missing_energy, jet1, jet2, jet3, jet4, high_level], dim=1)
+        graph = torch_geometric.data.Data(x=x[0], edge_index=self.edge_index)
+        graph = graph.to('cuda')
+
+        x = self.gat_conv1(graph.x, graph.edge_index)
+        # x = self.gat_conv2(x, graph.edge_index)
+        x = global_max_pool(x, torch.zeros(x.shape[0], dtype=torch.int64).to('cuda'))
+
+        x = self.classifier(x)
+        return x
+
+
+# try HeteroData?
 
 class MLP(torch.nn.Module):
     def __init__(self):
