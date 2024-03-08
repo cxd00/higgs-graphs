@@ -43,6 +43,10 @@ def generate_higgs_exp_graph_edge_v3():
          fully_connect_manual_feat, connection], dim=1)
     return all_edge
 
+def generate_higgs_exp_graph_edge_v4():
+    fully_connect_physical = torch.tensor([[1, 2, 3, 4, 5, 6, 7], [0, 0, 1, 2, 1, 2,6]])
+    return fully_connect_physical
+
 def set_seed(seed=0):
     random.seed(seed)
     np.random.seed(seed)

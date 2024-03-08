@@ -221,11 +221,15 @@ class GNN_v5(torch.nn.Module):
         self.gat_conv1 = GATv2Conv(1, 64)
         self.gat_conv1_norm = GraphNorm(64)
         self.gat_conv2 = GATv2Conv(64, 128)
+        self.gat_conv2_norm = GraphNorm(128)
         self.gat_conv3 = GATv2Conv(128, out_hidden)
+        self.gat_conv3_norm = GraphNorm(out_hidden)
         self.gcn_conv1 = ARMAConv(1, 64)
         self.gcn_conv1_norm = GraphNorm(64)
         self.gcn_conv2 = ARMAConv(64, 128)
+        self.gcn_conv2_norm = GraphNorm(128)
         self.gcn_conv3 = ARMAConv(128, out_hidden)
+        self.gcn_conv3_norm = GraphNorm(out_hidden)
         self.aggr = SortAggregation(12)
         self.lin1 = Linear(out_hidden * 3 * 2, out_hidden)
         self.lin2 = Linear(out_hidden * 12 * 2, out_hidden)
@@ -241,9 +245,11 @@ class GNN_v5(torch.nn.Module):
 
         gat_conv2 = self.gat_conv2(gat_conv1, edge_index)
         gat_conv2 = F.elu(gat_conv2)
+        gat_conv2 = self.gat_conv2_norm(gat_conv2, batch)
 
         gat_conv3 = self.gat_conv3(gat_conv2, edge_index)
         gat_conv3 = F.elu(gat_conv3)
+        gat_conv3 = self.gat_conv3_norm(gat_conv3, batch)
 
         gcn_conv1 = self.gcn_conv1(x, edge_index)
         gcn_conv1 = F.elu(gcn_conv1)
@@ -251,9 +257,11 @@ class GNN_v5(torch.nn.Module):
 
         gcn_conv2 = self.gcn_conv2(gcn_conv1, edge_index)
         gcn_conv2 = F.elu(gcn_conv2)
+        gcn_conv2 = self.gcn_conv2_norm(gcn_conv2, batch)
 
         gcn_conv3 = self.gcn_conv3(gcn_conv2, edge_index)
         gcn_conv3 = F.elu(gcn_conv3)
+        gcn_conv3 = self.gcn_conv3_norm(gcn_conv3, batch)
 
         gcn_gat = torch.cat([gat_conv3, gcn_conv3], dim=1)
 
@@ -351,6 +359,7 @@ class GNN_v7(torch.nn.Module):
 
         # self.gat_conv1 = GATv2Conv(128, 128)
         self.gat_conv1 = ARMAConv(128, 128)
+        self.gat_conv2 = ARMAConv(128, 128)
         # self.gat_conv2 = GATv2Conv(256, 256)
 
         self.classifier = torch_geometric.nn.MLP([128, 64, 1], norm=None)
@@ -378,12 +387,87 @@ class GNN_v7(torch.nn.Module):
         graph = graph.to('cuda')
 
         x = self.gat_conv1(graph.x, graph.edge_index)
-        # x = self.gat_conv2(x, graph.edge_index)
+        x = self.gat_conv2(x, graph.edge_index)
         x = global_max_pool(x, torch.zeros(x.shape[0], dtype=torch.int64).to('cuda'))
 
         x = self.classifier(x)
         return x
 
+class GNN_v8(torch.nn.Module):
+    # Jet index encoding?
+    # An End-to-End Deep Learning Architecture for Graph Classification
+    def __init__(self):
+        super(GNN_v8, self).__init__()
+        out_hidden = 512
+        self.gat_conv1 = GATv2Conv(3, 64)
+        self.gat_conv1_norm = GraphNorm(64)
+        self.gat_conv2 = GATv2Conv(64, 128)
+        self.gat_conv2_norm = GraphNorm(128)
+        self.gat_conv3 = GATv2Conv(128, out_hidden)
+        self.gat_conv3_norm = GraphNorm(out_hidden)
+
+        self.gcn_conv1 = ARMAConv(3, 64)
+        self.gcn_conv1_norm = GraphNorm(64)
+        self.gcn_conv2 = ARMAConv(64, 128)
+        self.gcn_conv2_norm = GraphNorm(128)
+        self.gcn_conv3 = ARMAConv(128, out_hidden)
+        self.gcn_conv3_norm = GraphNorm(out_hidden)
+        self.aggr = SortAggregation(4)
+        self.lin1 = Linear(out_hidden * 3 * 2, out_hidden)
+        self.lin2 = Linear(out_hidden * 4 * 2, out_hidden)
+
+        self.lin3 = Linear(out_hidden * 2 + 128, 1, bias=False)
+        self.lin4 = Linear(9, 128)
+        # self.lin4 = Linear(2, 2, bias=False) 
+
+    def forward(self, x, edge_index, batch, additional_feat=None):
+        # x, edge_index, batch = data.x, data.edge_index, data.batch
+        batch_size = batch.max() + 1
+        gat_conv1 = self.gat_conv1(x, edge_index)
+        gat_conv1 = F.elu(gat_conv1)
+        gat_conv1 = self.gat_conv1_norm(gat_conv1, batch)
+
+        gat_conv2 = self.gat_conv2(gat_conv1, edge_index)
+        gat_conv2 = F.elu(gat_conv2)
+        gat_conv2 = self.gat_conv2_norm(gat_conv2, batch)
+
+        gat_conv3 = self.gat_conv3(gat_conv2, edge_index)
+        gat_conv3 = F.elu(gat_conv3)
+        gat_conv3 = self.gat_conv3_norm(gat_conv3, batch)
+
+        gcn_conv1 = self.gcn_conv1(x, edge_index)
+        gcn_conv1 = F.elu(gcn_conv1)
+        gcn_conv1 = self.gcn_conv1_norm(gcn_conv1, batch)
+
+        gcn_conv2 = self.gcn_conv2(gcn_conv1, edge_index)
+        gcn_conv2 = F.elu(gcn_conv2)
+        gcn_conv2 = self.gcn_conv2_norm(gcn_conv2, batch)
+
+        gcn_conv3 = self.gcn_conv3(gcn_conv2, edge_index)
+        gcn_conv3 = F.elu(gcn_conv3)
+        gcn_conv3 = self.gcn_conv3_norm(gcn_conv3, batch)
+
+        gcn_gat = torch.cat([gat_conv3, gcn_conv3], dim=1)
+
+        x_max = global_max_pool(gcn_gat, batch)
+        x_mean = global_mean_pool(gcn_gat, batch)
+        x_add = global_add_pool(gcn_gat, batch)
+        x_norm_pool = torch.cat([x_max, x_mean, x_add], dim=1)
+        x_norm_pool = self.lin1(x_norm_pool)
+
+        x_agg_pool = self.aggr(gcn_gat, batch)
+        x_agg_pool = self.lin2(x_agg_pool)
+
+        if additional_feat is not None:
+            additional_feat = additional_feat.reshape(batch_size, 9)
+            additional_feat = self.lin4(additional_feat)
+            x = torch.cat([x_norm_pool, x_agg_pool, additional_feat], dim=1)
+        else:
+            x = torch.cat([x_norm_pool, x_agg_pool], dim=1)
+        x = F.dropout(x, p=0.2, training=self.training)
+        x = self.lin3(x)
+        # x = self.lin4(x)
+        return x
 
 # try HeteroData?
 
