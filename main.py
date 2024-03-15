@@ -3,7 +3,7 @@ import plotly
 import torch
 import torch_geometric
 import wandb
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.preprocessing import OneHotEncoder
 from torch_geometric.utils import barabasi_albert_graph, erdos_renyi_graph
 from torch_geometric.nn import summary
@@ -34,10 +34,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # model = GNN_v3()
 # model = GNN_v3_mini()
 # model = GNN_v4()
-# model = GNN_v5()
+model = GNN_v5()
 # model = GNN_v6()
 # model = GNN_v7()
-model = GNN_v8()
+# model = GNN_v8()
 # model = MLP()
 
 # wandb log model name
@@ -50,12 +50,12 @@ lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9
 
 # Test PyG
 print('Loading datasets')
-# train_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train', norm=False)
-# val_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val', norm=False)
-# test_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test', norm=False)
-train_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train', norm=False)
-val_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val', norm=False)
-test_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test', norm=False)
+train_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train', norm=False)
+val_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val', norm=False)
+test_dataset = HiggsDatasetPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test', norm=False)
+# train_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='train', norm=False)
+# val_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='val', norm=False)
+# test_dataset = HiggsDatasetNewPyG(csv_file=csv_file, edge_index=edge_index_ba, split='test', norm=False)
 # train_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='train', norm=False)
 # val_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='val', norm=False)
 # test_dataset = HiggsDataset3DPyG(csv_file=csv_file, split='test', norm=False)
@@ -88,7 +88,7 @@ num_epochs = 35
 # Start the training loop
 model = model.to(device)
 # model = torch.compile(model)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+# scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 print('Start training')
 best_val_loss = float('inf')
 criterion = torch.nn.BCEWithLogitsLoss()
@@ -168,3 +168,7 @@ labels = torch.cat(labels).numpy()
 roc_auc = roc_auc_score(labels, preds)
 print(f'Test ROC AUC score: {roc_auc}')
 wandb.log({"roc_auc": roc_auc})
+
+accuracy = accuracy_score(labels, preds)
+print(f'Test accuracy: {accuracy}')
+wandb.log({"accuracy": accuracy})

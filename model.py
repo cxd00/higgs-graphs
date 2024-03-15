@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from torch.nn import Linear, ReLU, ELU
+from torch import nn
+from torch.nn import Linear, ReLU, ELU, init
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool, ARMAConv, GATv2Conv, SortAggregation, \
     MLPAggregation, PointNetConv, TopKPooling, GCN, GAT
 from torch_geometric.nn.conv import GATConv, GCNConv
@@ -9,6 +10,8 @@ from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.nn import aggr
 from torch_geometric.transforms import GDC
 from torch_geometric.utils import erdos_renyi_graph
+
+from utils import generate_higgs_exp_graph_edge_v4, generate_higgs_exp_graph_edge_v5
 
 
 class GNN(torch.nn.Module):
@@ -230,14 +233,14 @@ class GNN_v5(torch.nn.Module):
         self.gcn_conv2_norm = GraphNorm(128)
         self.gcn_conv3 = ARMAConv(128, out_hidden)
         self.gcn_conv3_norm = GraphNorm(out_hidden)
-        self.aggr = SortAggregation(12)
+        self.aggr = SortAggregation(6)
         self.lin1 = Linear(out_hidden * 3 * 2, out_hidden)
-        self.lin2 = Linear(out_hidden * 12 * 2, out_hidden)
+        self.lin2 = Linear(out_hidden * 6 * 2, out_hidden)
 
         self.lin3 = Linear(out_hidden * 2, 1, bias=False)
         # self.lin4 = Linear(2, 2, bias=False) 
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, x, edge_index, batch, additional_feat=None):
         # x, edge_index, batch = data.x, data.edge_index, data.batch
         gat_conv1 = self.gat_conv1(x, edge_index)
         gat_conv1 = F.elu(gat_conv1)
@@ -277,7 +280,6 @@ class GNN_v5(torch.nn.Module):
         x = torch.cat([x_norm_pool, x_agg_pool], dim=1)
         x = F.dropout(x, p=0.2, training=self.training)
         x = self.lin3(x)
-        # x = self.lin4(x)
         return x
 
 
@@ -469,22 +471,45 @@ class GNN_v8(torch.nn.Module):
         # x = self.lin4(x)
         return x
 
-# try HeteroData?
 
-class MLP(torch.nn.Module):
+class GNN_v9(torch.nn.Module):
+    def __init__(self):
+        super(GNN_v9, self).__init__()
+        self.n8_1 = GNN_v8()
+        self.n8_2 = GNN_v8()
+        
+        self.edge_index_background = generate_higgs_exp_graph_edge_v4()
+        self.edge_index_background = self.edge_index_background.to('cuda')
+        self.edge_index_higgs = generate_higgs_exp_graph_edge_v5()
+        self.edge_index_higgs = self.edge_index_higgs.to('cuda')
+
+    def forward(self, x, edge_index, batch, additional_feat):        
+        x1 = self.n8_1(x, self.edge_index_background, batch, additional_feat)
+        x2 = self.n8_2(x, self.edge_index_higgs, batch, additional_feat)
+        x = torch.cat([x1, x2], dim=1)
+        return x
+
+class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
-        self.lin1 = Linear(28, 64)
-        self.lin2 = Linear(64, 256)
-        self.lin3 = Linear(256, 64)
-        self.lin4 = Linear(64, 28)
-        self.lin5 = Linear(28, 1)
+        self.lin1 = nn.Linear(28, 300)
+        self.lin2 = nn.Linear(300, 300)
+        self.lin3 = nn.Linear(300, 300)
+        self.lin4 = nn.Linear(300, 300)
+        self.lin5 = nn.Linear(300, 1)
+
+        # Initialize weights
+        init.normal_(self.lin1.weight, mean=0.0, std=0.1)
+        init.normal_(self.lin2.weight, mean=0.0, std=0.05)
+        init.normal_(self.lin3.weight, mean=0.0, std=0.05)
+        init.normal_(self.lin4.weight, mean=0.0, std=0.05)
+        init.normal_(self.lin5.weight, mean=0.0, std=0.001)
 
     def forward(self, x):
-        x = self.lin1(x).relu()
-        x = self.lin2(x).relu()
-        x = self.lin3(x).relu()
-        x = self.lin4(x).relu()
-        x = F.dropout(x, p=0.7, training=self.training)
+        x = self.lin1(x).tanh()
+        x = nn.functional.dropout(x, p=0.5, training=self.training)
+        x = self.lin2(x).tanh()
+        x = self.lin3(x).tanh()
+        x = self.lin4(x).tanh()
         x = self.lin5(x)
         return x

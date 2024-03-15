@@ -7,7 +7,7 @@ from sklearn.preprocessing import MinMaxScaler
 from torch_geometric.utils import barabasi_albert_graph, erdos_renyi_graph
 from torch_geometric.data import Data
 
-from utils import create_graph, generate_higgs_exp_graph_edge
+from utils import create_graph, generate_higgs_exp_graph_edge, generate_higgs_exp_graph_edge_v4, generate_higgs_exp_graph_edge_v5
 
 
 class HiggsDatasetPyG(torch_geometric.data.Dataset):
@@ -58,7 +58,7 @@ class HiggsDatasetPyG(torch_geometric.data.Dataset):
         sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index,
                       y=torch.tensor(int(class_label), dtype=torch.float),
                       node_name=self.higgs_frame.columns[1:].values)
-
+        sample.additional_feat = torch.zeros(1)
         return sample
 
     def normalize(self, df):
@@ -155,6 +155,110 @@ class HiggsDatasetNewPyG(torch_geometric.data.Dataset):
         sample.additional_feat = torch.concat([missing_energy_raw, high_level_raw], dim=0)
 
         return sample
+
+    def normalize(self, df):
+        columns_to_normalize_0_1 = ['jet_1_b-tag', 'jet_2_b-tag', 'jet_3_b-tag', 'jet_4_b-tag',
+                                    'm_jj', 'm_jjj', 'm_lv', 'm_jlv', 'm_bb', 'm_wbb', 'm_wwbb']
+
+        columns_to_normalize_minus1_1 = [col for col in df.columns if
+                                         col not in columns_to_normalize_0_1 + ['class_label']]
+        data_0_1 = df[columns_to_normalize_0_1]
+        data_minus1_1 = df[columns_to_normalize_minus1_1]
+        scaler_0_1 = MinMaxScaler(feature_range=(0, 1))
+        data_0_1 = pd.DataFrame(scaler_0_1.fit_transform(data_0_1), columns=data_0_1.columns)
+        scaler_minus1_1 = MinMaxScaler(feature_range=(-1, 1))
+        data_minus1_1 = pd.DataFrame(scaler_minus1_1.fit_transform(data_minus1_1), columns=data_minus1_1.columns)
+
+        normalized_df = pd.concat([df['class_label'], data_0_1, data_minus1_1], axis=1)
+        normalized_df = normalized_df.reindex(columns=df.columns)
+
+        return normalized_df
+
+class HiggsDatasetNewV2PyG(torch_geometric.data.Dataset):
+    def __init__(self, csv_file, split, norm=False, drop_feats=False, root=None, transform=None,
+                 pre_transform=None,
+                 pre_filter=None):
+        super().__init__(root, transform, pre_transform, pre_filter)
+        # Load data
+        self.higgs_frame = pd.read_csv(csv_file, compression='gzip', header=None, nrows=20000)
+        # enable shuffle
+        self.higgs_frame = self.higgs_frame.sample(frac=1).reset_index(drop=True)
+        self.higgs_frame.columns = [
+            'class_label',
+            'lepton_pT', 'lepton_eta', 'lepton_phi',
+            'missing_energy_magnitude', 'missing_energy_phi',
+            'jet_1_pt', 'jet_1_eta', 'jet_1_phi', 'jet_1_b-tag',
+            'jet_2_pt', 'jet_2_eta', 'jet_2_phi', 'jet_2_b-tag',
+            'jet_3_pt', 'jet_3_eta', 'jet_3_phi', 'jet_3_b-tag',
+            'jet_4_pt', 'jet_4_eta', 'jet_4_phi', 'jet_4_b-tag',
+            'm_jj', 'm_jjj', 'm_lv', 'm_jlv', 'm_bb', 'm_wbb', 'm_wwbb']
+        if drop_feats:
+            self.higgs_frame = self.higgs_frame.drop(
+                columns=['m_jj', 'm_jjj', 'm_lv', 'm_jlv', 'm_bb', 'm_wbb', 'm_wwbb'])
+        if norm:
+            self.higgs_frame = self.normalize(self.higgs_frame)
+        self.edge_index_background = generate_higgs_exp_graph_edge_v4()
+        self.edge_index_higgs = generate_higgs_exp_graph_edge_v5()
+        total_rows = len(self.higgs_frame)
+        if split == 'train':
+            self.higgs_frame = self.higgs_frame[:int(total_rows * 0.6)]
+        elif split == 'val':
+            self.higgs_frame = self.higgs_frame[int(total_rows * 0.6):int(total_rows * 0.8)]
+        elif split == 'test':
+            self.higgs_frame = self.higgs_frame[int(total_rows * 0.8):]
+
+    def len(self):
+        return len(self.higgs_frame)
+
+    def get(self, idx):
+        data = self.higgs_frame.iloc[idx, 1:].values
+        data_len = len(data)
+        data = data.astype('float')
+        class_label = self.higgs_frame.iloc[idx, 0]
+
+        lepton_raw = data[0:3]
+        missing_energy_raw = data[3:5]
+        jet1_raw = data[5:9]
+        jet2_raw = data[9:13]
+        jet3_raw = data[13:17]
+        jet4_raw = data[17:21]
+        high_level_raw = data[21:28]
+
+        # sort jet1-4 by last elemnt of each jet_raw
+        jet_total = torch.tensor([jet1_raw, jet2_raw, jet3_raw, jet4_raw])
+        jet_total = jet_total[jet_total[ :, 3].argsort()]
+        
+        w_jet_1 = jet_total[0, :3]
+        w_jet_2 = jet_total[1, :3]
+        b_jet_1 = jet_total[2, :3]
+        b_jet_2 = jet_total[3, :3]
+
+        empty_node_1 = torch.zeros(3)
+        empty_node_2 = torch.zeros(3)
+        empty_node_3 = torch.zeros(3)
+
+        lepton_raw = torch.tensor(lepton_raw, dtype=torch.float)
+        missing_energy_raw = torch.tensor(missing_energy_raw, dtype=torch.float)
+        high_level_raw = torch.tensor(high_level_raw, dtype=torch.float)
+
+        # node
+        node_names = ['empty1', 'empty2', 'empty3', 'b_jet_1', 'b_jet_2', 'w_jet_1', 'w_jet_2', 'lepton']
+        data = torch.stack([empty_node_1, empty_node_2, empty_node_3, b_jet_1, b_jet_2, w_jet_1, w_jet_2, lepton_raw])
+
+        label = torch.zeros((1,2))
+        label[:, int(class_label)] = 1
+
+        background_sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index_background,
+                      y=label, dtype=torch.float,
+                      node_name=node_names)
+        background_sample.additional_feat = torch.concat([missing_energy_raw, high_level_raw], dim=0)
+        
+        # higgs_sample = Data(x=torch.tensor(data, dtype=torch.float), edge_index=self.edge_index_higgs,
+        #               y=label, dtype=torch.float,
+        #               node_name=node_names)
+        # higgs_sample.additional_feat = torch.concat([missing_energy_raw, high_level_raw], dim=0)
+
+        return background_sample
 
     def normalize(self, df):
         columns_to_normalize_0_1 = ['jet_1_b-tag', 'jet_2_b-tag', 'jet_3_b-tag', 'jet_4_b-tag',
@@ -276,7 +380,7 @@ class HiggsDataset3DPyG(torch_geometric.data.Dataset):
 class HiggsDatasetTorch(torch.utils.data.Dataset):
     def __init__(self, csv_file, split, norm=False, drop_feats=False):
         super(HiggsDatasetTorch, self).__init__()
-        self.higgs_frame = pd.read_csv(csv_file, compression='gzip', header=None, nrows=10000)
+        self.higgs_frame = pd.read_csv(csv_file, compression='gzip', header=None)
         self.higgs_frame.columns = [
             'class_label',
             'lepton_pT', 'lepton_eta', 'lepton_phi',
